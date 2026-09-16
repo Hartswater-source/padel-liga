@@ -1,9 +1,20 @@
 /* ============================================================
-   Vroue Padel Americano — dashboard
+   Padel Liga — dashboard
    Data en persoonlike inligting leef in Firestore, agter aanmelding.
    In hierdie lêer staan niks persoonliks nie.
    ============================================================ */
 import { firebaseConfig, SHARED_EMAIL, SEASON_ID } from "./config.js";
+
+/* Die twee ligas. Geen persoonlike inligting hier nie — net watter
+   Firestore-dokument elkeen gebruik en of daar geld deur die
+   organiseerder loop. */
+var LEAGUES = [
+  { id:"vroue", label:"Vroue", doc:(SEASON_ID||"seisoen1"), costs:true  },
+  { id:"mans",  label:"Mans",  doc:"mans1",                 costs:false }
+];
+var LG = 0;
+try{ var _l=localStorage.getItem("pl-league"); if(_l!==null && LEAGUES[+_l]) LG=+_l; }catch(e){}
+function league(){ return LEAGUES[LG]; }
 
 /* Firebase word dinamies gelaai sodat die bladsy nie leeg is as die
    CDN onbereikbaar is nie. */
@@ -31,12 +42,12 @@ var auth=null, db=null, ref=null, unsub=null;
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 var app=document.getElementById("app");
 /* ========== vaste rotasie ==========
-   8 vroue, 8 weke. Elke week twee rondtes; elke rondte is een wedstryd
-   tussen twee pare, dus 4 vroue op die baan. Elke vrou speel presies een
-   rondte per week — haar naam kom een keer per week voor.
+   8 spelers, 8 weke. Elke week twee rondtes; elke rondte is een wedstryd
+   tussen twee pare, dus 4 spelers op die baan. Elke speler speel presies
+   een rondte per week — sy naam kom een keer per week voor.
 
    Die paring is 'n volledige rondomtalie (1-faktorisering van K8): oor
-   weke 1–7 speel elke vrou presies een keer saam met elke ander vrou.
+   weke 1–7 speel elke speler presies een keer saam met elke ander speler.
    Week 8 is 'n oop finale — die pare word op die dag geloot.
 
    Formaat: ROT7[week][rondte] = [[speler,speler],[speler,speler]]  */
@@ -155,7 +166,7 @@ function iso(d){
   return d.getFullYear()+"-"+(mm.length<2?"0"+mm:mm)+"-"+(dd.length<2?"0"+dd:dd);
 }
 function addDays(d,n){ var x=new Date(d.getTime()); x.setDate(x.getDate()+n); return x; }
-function weekStart(i){ return addDays(parseDate(S.startDate), i*7); }
+function weekStart(i){ return addDays(parseDate(S.startDate), i*7); }   /* nie meer gebruik vir etikette nie */
 function fmtDay(d){ return d.getDate()+" "+MON[d.getMonth()]; }
 function weekRange(i){ var a=weekStart(i); return fmtDay(a)+" – "+fmtDay(addDays(a,6)); }
 function fmtDate(s){
@@ -241,7 +252,10 @@ function plural(n,one,many){ return n+" "+(n===1?one:many); }
 /* ========== render ========== */
 var TABS_BASE=[["week","Hierdie week"],["skedule","Skedule"],["plan","My speelplan"],
           ["ranglys","Ranglys"],["koste","Kostes"],["hoe","Hoe dit werk"]];
-function tabs(){ return UI.org ? TABS_BASE.concat([["stel","Instellings"]]) : TABS_BASE; }
+function tabs(){
+  var t = TABS_BASE.filter(function(x){ return x[0]!=="koste" || league().costs; });
+  return (UI.org || UI.tab==="stel") ? t.concat([["stel","Instellings"]]) : t;
+}
 
 function render(){
   document.getElementById("app").innerHTML =
@@ -253,19 +267,31 @@ function render(){
     '</div></div></nav>' +
     '<main><div class="wrap">' + body() + '</div></main>' +
     '<footer class="foot"><div class="wrap">' +
-      'Vroue Padel Americano · Seisoen 1 · geen pryse, geen wins — ons deel net die baan se koste.' +
+      'Padel Liga · ' + esc(league().label) + ' · Seisoen 1 · geen pryse, net lekker speel.' +
     '</div></footer>';
   var chip=document.getElementById("savechip");
   if(chip){ chip.className="savechip "+saveState; chip.textContent=UI.msg; }
 }
 function header(){
   return '<header class="top"><div class="wrap"><div class="topin">' +
-    '<div class="brand"><h1>Vroue Padel Americano</h1><span class="sub">Seisoen 1 · 8 weke</span></div>' +
-    '<div class="topact"><span id="savechip" class="savechip idle"></span>' +
+    '<div class="brand"><h1>Padel Liga</h1><span class="sub">'+esc(league().label)+' · 8 weke</span></div>' +
+    '<div class="topact">' + leaguePicker() + '<span id="savechip" class="savechip idle"></span>' +
     (UI.org ? '<button class="btn ghost tiny" data-act="lockoff">Organiseerder aan</button>'
             : '<button class="btn ghost tiny" data-act="unlock">Organiseerder</button>') +
     '<button class="btn ghost tiny" data-act="signout" title="Meld af">Meld af</button>' +
     '</div></div></div></header>';
+}
+function unlockCard(){
+  return '<div class="sectionhead"><h2>Organiseerder</h2></div>' +
+    '<div class="card" style="padding:18px;max-width:430px">' +
+    '<p class="small muted" style="margin:0 0 12px">Name en instellings word deur die organiseerder bestuur. Tik die kode in om te ontsluit.</p>' +
+    codeForm() + '</div>';
+}
+function leaguePicker(){
+  return '<div class="ligapick" role="group" aria-label="Kies liga">' +
+    LEAGUES.map(function(l,i){
+      return '<button class="lg'+(i===LG?" on":"")+'" data-act="league" data-i="'+i+'"'+(i===LG?' aria-current="true"':'')+'>'+esc(l.label)+'</button>';
+    }).join("") + '</div>';
 }
 function readOnlyNotice(){
   if(!DEMO) return "";
@@ -277,9 +303,9 @@ function body(){
     case "skedule": return tabSkedule();
     case "plan": return tabPlan();
     case "ranglys": return tabRanglys();
-    case "koste": return tabKoste();
+    case "koste": return league().costs ? tabKoste() : tabWeek();
     case "hoe": return tabHoe();
-    case "stel": return UI.org ? tabStel() : tabKoste();
+    case "stel": return UI.org ? tabStel() : unlockCard();
   }
   return "";
 }
@@ -288,7 +314,7 @@ function pairName(pair){ return esc(S.players[pair[0]])+" + "+esc(S.players[pair
 /* ---- Hierdie week ---- */
 function tabWeek(){
   var w=UI.week, opts="";
-  for(var i=0;i<8;i++) opts += '<option value="'+i+'"'+(i===w?' selected':'')+'>Week '+(i+1)+' · '+esc(weekRange(i))+'</option>';
+  for(var i=0;i<8;i++) opts += '<option value="'+i+'"'+(i===w?' selected':'')+'>Week '+(i+1)+'</option>';
   return readOnlyNotice() +
     '<div class="sectionhead">' +
       '<div class="weekpick">' +
@@ -334,7 +360,6 @@ function finaleBox(){
 
 function rondteCard(w,g){
   var mm=wk(w), m=mm?mm[g]:null, gr=S.weeks[w].groups[g], sc=scores(gr.s);
-  var a=weekStart(w), lo=iso(a), hi=iso(addDays(a,6));
   var ready = !!(gr.date && gr.time);
 
   var slot;
@@ -344,7 +369,7 @@ function rondteCard(w,g){
       '<button class="btn ghost tiny" data-act="unconfirm" data-w="'+w+'" data-g="'+g+'">Verander</button></div>';
   } else {
     slot = '<div class="slot"><div class="slotfields">' +
-      '<label class="fld">Datum<input type="date" min="'+lo+'" max="'+hi+'" data-act="date" data-w="'+w+'" data-g="'+g+'" value="'+esc(gr.date)+'"></label>' +
+      '<label class="fld">Datum<input type="date" data-act="date" data-w="'+w+'" data-g="'+g+'" value="'+esc(gr.date)+'"></label>' +
       '<label class="fld">Tyd<input type="time" data-act="time" data-w="'+w+'" data-g="'+g+'" value="'+esc(gr.time)+'"></label>' +
       '<button class="btn" data-act="confirm" data-w="'+w+'" data-g="'+g+'"'+(ready?"":" disabled")+'>Bevestig</button>' +
     '</div><div class="small muted" style="flex:1 1 100%">Julle vier kies self die dag en tyd — enigeen kan dit hier bevestig.</div></div>';
@@ -363,7 +388,7 @@ function rondteCard(w,g){
 
   return '<section class="card sess">' +
     '<div class="sesshead"><div class="glabel"><span class="gbadge">'+(g+1)+'</span>' +
-      '<div><div class="eyebrow">Rondte '+(g+1)+'</div><div class="small muted">Week '+(w+1)+' · '+esc(weekRange(w))+'</div></div></div>' +
+      '<div><div class="eyebrow">Rondte '+(g+1)+'</div><div class="small muted">Week '+(w+1)+'</div></div></div>' +
       (gr.confirmed?'':'<span class="pill wait"><span class="dot"></span>'+(gr.date||gr.time?'nog nie bevestig':'geen tyd')+'</span>') +
     '</div>' +
     slot +
@@ -378,7 +403,7 @@ function rondteCard(w,g){
 function tabSkedule(){
   var rows="";
   for(var w=0;w<8;w++){
-    rows += '<tr><td><b>Week '+(w+1)+'</b><div class="small muted datecell">'+esc(weekRange(w))+'</div></td>';
+    rows += '<tr><td><b>Week '+(w+1)+'</b></td>';
     var mmw=wk(w);
     for(var g=0;g<2;g++){
       var gr=S.weeks[w].groups[g], m=mmw?mmw[g]:null;
@@ -395,9 +420,9 @@ function tabSkedule(){
     rows += '</tr>';
   }
   return '<div class="sectionhead"><h2>Volle 8-week rotasie</h2>' +
-    '<span class="small muted">Elke vrou speel een rondte per week</span></div>' +
+    '<span class="small muted">Elke speler speel een rondte per week</span></div>' +
     '<div class="card tablewrap"><table><thead><tr><th>Week</th><th>Rondte 1</th><th>Rondte 2</th></tr></thead><tbody>'+rows+'</tbody></table></div>' +
-    '<p class="small muted" style="margin-top:12px">Jou spanmaat verander elke week: oor weke 1–7 speel jy presies een keer saam met elke ander vrou in die groep. Week 8 is die finale — daardie pare kom uit die ranglys' + (finaleFinal()?'':' en kan nog verander soos die tellings inkom') + '.</p>';
+    '<p class="small muted" style="margin-top:12px">Jou spanmaat verander elke week: oor weke 1–7 speel jy presies een keer saam met elke ander speler in die groep. Week 8 is die finale — daardie pare kom uit die ranglys' + (finaleFinal()?'':' en kan nog verander soos die tellings inkom') + '.</p>';
 }
 
 /* ---- My speelplan ---- */
@@ -411,7 +436,7 @@ function tabPlan(){
     if(!f){
       cards += '<section class="card sess">' +
         '<div class="sesshead"><div class="glabel"><span class="gbadge">'+(w+1)+'</span>' +
-        '<div><div class="eyebrow">Week '+(w+1)+' · oop finale</div><div class="small muted">'+esc(weekRange(w))+'</div></div></div></div>' +
+        '<div><div class="eyebrow">Week '+(w+1)+' · die finale</div></div></div></div>' +
         '<p class="small muted" style="margin:0">Die pare word op die dag geloot. Kyk by <b>Hierdie week</b> sodra dit gedoen is.</p>' +
       '</section>';
       continue;
@@ -423,7 +448,7 @@ function tabPlan(){
                   : '<span class="pill neutral">Verloor</span>') : '';
     cards += '<section class="card sess">' +
       '<div class="sesshead"><div class="glabel"><span class="gbadge">'+(w+1)+'</span>' +
-        '<div><div class="eyebrow">Week '+(w+1)+' · rondte '+(f.g+1)+'</div><div class="small muted">'+esc(weekRange(w))+'</div></div></div>' +
+        '<div><div class="eyebrow">Week '+(w+1)+' · rondte '+(f.g+1)+'</div></div></div>' +
         (gr.confirmed
           ? '<span class="pill ok"><span class="dot"></span>'+esc(slotLabel(gr))+'</span>'
           : '<span class="pill wait"><span class="dot"></span>'+(slotLabel(gr)?esc(slotLabel(gr)):'geen tyd')+'</span>') +
@@ -476,7 +501,7 @@ function tabKoste(){
   var tiles='<div class="stats" style="margin-bottom:18px">' +
     stat("Registrasie", money(S.regFee), "eenmalig, vooruit") +
     stat("By die baan", money(c.perPlayer,dec), "elke keer as jy speel") +
-    stat("Totaal per vrou", money(c.seasonPerPlayer,c.seasonPerPlayer%1!==0), "oor die hele 8 weke") +
+    stat("Totaal per speler", money(c.seasonPerPlayer,c.seasonPerPlayer%1!==0), "oor die hele 8 weke") +
     stat(c.fundLeft>=0?"Fonds oor":"Fonds kort", money(Math.abs(c.fundLeft)), c.fundLeft>=0?"na Seisoen 2":"verhoog registrasie") +
   '</div>';
 
@@ -484,7 +509,7 @@ function tabKoste(){
     '<div class="eyebrow" style="margin-bottom:10px">Hoe die geld werk</div>' +
     '<div class="prose" style="max-width:70ch"><p style="margin-bottom:10px">Jou ' + money(S.regFee) + ' registrasie word vooraf aan die organiseerder betaal en gaan in die baanfonds. ' +
     'By elke rondte betaal die organiseerder ' + money(S.orgShare) + ' kontant uit daardie fonds by die baan. ' +
-    'Die ' + money(c.left) + ' wat oorbly, word deur die vier vroue op die baan verdeel — ' + money(c.perPlayer,dec) + ' elk.</p>' +
+    'Die ' + money(c.left) + ' wat oorbly, word deur die vier spelers op die baan verdeel — ' + money(c.perPlayer,dec) + ' elk.</p>' +
     '<p style="margin-bottom:0">Verder is daar niks: geen admin-, lidmaatskap- of geleentheidsfooi, geen pryse en geen wins. Wat aan die einde in die fonds oorbly, gaan na Seisoen 2 se baanfonds.</p></div></div>';
 
   var calc='<div class="card" style="padding:16px;margin-bottom:18px">' +
@@ -492,14 +517,14 @@ function tabKoste(){
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">' +
       '<label class="fld">Baanfooi per uur<input type="number" min="0" step="10" data-act="rate" value="'+S.courtRate+'"'+(UI.org?"":" disabled")+'></label>' +
       '<label class="fld">Uit fonds per rondte<input type="number" min="0" step="10" data-act="share" value="'+S.orgShare+'"'+(UI.org?"":" disabled")+'></label>' +
-      '<label class="fld">Registrasie per vrou<input type="number" min="0" step="10" data-act="reg" value="'+S.regFee+'"'+(UI.org?"":" disabled")+'></label>' +
+      '<label class="fld">Registrasie per speler<input type="number" min="0" step="10" data-act="reg" value="'+S.regFee+'"'+(UI.org?"":" disabled")+'></label>' +
     '</div>' +
     '<div class="kv">' +
       '<span class="k">Baanfooi vir een rondte</span><span class="v">'+money(S.courtRate)+'</span>' +
       '<span class="k">Minus die organiseerder se kontantbydrae</span><span class="v">− '+money(S.orgShare)+'</span>' +
       '<span class="rule"></span>' +
-      '<span class="k">Die vier vroue betaal saam by die baan</span><span class="v">'+money(c.left)+'</span>' +
-      '<span class="k">Elke vrou betaal dus</span><span class="v">'+money(c.perPlayer,dec)+'</span>' +
+      '<span class="k">Die vier spelers betaal saam by die baan</span><span class="v">'+money(c.left)+'</span>' +
+      '<span class="k">Elke speler betaal dus</span><span class="v">'+money(c.perPlayer,dec)+'</span>' +
       '<span class="rule"></span>' +
       '<span class="k">Registrasiefonds · 8 × '+money(S.regFee)+'</span><span class="v">'+money(c.fund)+'</span>' +
       '<span class="k">Bydraes oor 16 rondtes · 16 × '+money(S.orgShare)+'</span><span class="v">− '+money(c.orgTotal)+'</span>' +
@@ -556,34 +581,42 @@ function codeForm(){
 
 /* ---- Hoe dit werk ---- */
 function tabHoe(){
-  var c=costs(), dec=c.perPlayer%1!==0;
+  var c=costs(), dec=c.perPlayer%1!==0, W=league().costs?"vrou":"speler", WS=league().costs?"vroue":"spelers";
+  var geld = league().costs
+    ? '<h3>Wat dit kos</h3>' +
+      '<ul><li>' + money(S.regFee) + ' eenmalige registrasie, vooraf aan die organiseerder. Dit gaan in die baanfonds. Die bankbesonderhede staan op die <b>Kostes</b>-blad.</li>' +
+      '<li>By elke rondte sit die organiseerder ' + money(S.orgShare) + ' kontant uit die fonds by die baan in.</li>' +
+      '<li>Die ' + money(c.left) + ' wat oorbly deel die vier ' + WS + ' op die baan — ' + money(c.perPlayer,dec) + ' elk, ter plaatse betaal.</li>' +
+      '<li>Altesaam ' + money(c.seasonPerPlayer,c.seasonPerPlayer%1!==0) + ' vir die hele program.</li>' +
+      '<li>Geen admin-, lidmaatskap- of geleentheidsfooi. Wat oorbly gaan na Seisoen 2 se baanfonds.</li></ul>' +
+      '<h3>As jy nie kan speel nie</h3>' +
+      '<p>Laat die organiseerder so gou moontlik weet — jou maat staan sonder ’n span as jy nie opdaag nie, so hoe vroeër hoe beter. Kanselleer jy op die nippertjie, bly jy verantwoordelik vir jou deel van daardie rondte se baanfooi, want die baan moet steeds betaal word.</p>'
+    : '<h3>Die baan en die geld</h3>' +
+      '<p><b>Julle reël self.</b> Daar is geen registrasie, geen fonds en geen geld wat deur die organiseerder loop nie. Die vier wat daardie week speel, bespreek self die baan en betaal self daarvoor — julle deel dit soos julle goeddink.</p>' +
+      '<p>Die dashboard hou net die rotasie, die tye en die punte by. Dit vra nooit ’n sent nie.</p>' +
+      '<h3>As jy nie kan speel nie</h3>' +
+      '<p>Laat die ander drie so gou moontlik weet. Jou maat staan sonder ’n span as jy nie opdaag nie, en die bespreking is klaar gemaak — hoe vroeër jy sê, hoe makliker kry julle iemand in jou plek of skuif julle die tyd.</p>';
+
   return '<div class="sectionhead"><h2>Hoe dit werk</h2></div>' +
   '<div class="card" style="padding:20px 22px"><div class="prose">' +
-    '<p><b>Die kern:</b> ’n bekostigbare 8-week vroue-padelgroep waar jy een keer per week speel, jou speeldag by jou lewe pas, elke week met ’n ander maat speel, en waar geen wins gemaak word nie — ons deel eenvoudig die koste van die baan.</p>' +
+    '<p><b>Die kern:</b> ’n 8-week padelgroep waar jy een keer per week speel, jou speeldag by jou lewe pas, en elke week met ’n ander maat speel. Geen pryse, geen wins.</p>' +
     '<h3>Die formaat</h3>' +
-    '<ul><li>8 vroue, 8 weke, een baan.</li>' +
-    '<li>Elke week is daar <b>twee rondtes</b>. ’n Rondte is een wedstryd tussen twee pare — vier vroue op die baan.</li>' +
+    '<ul><li>8 ' + WS + ', 8 weke.</li>' +
+    '<li>Elke week is daar <b>twee rondtes</b>. ’n Rondte is een wedstryd tussen twee pare — vier ' + WS + ' op die baan.</li>' +
     '<li>Jy speel presies een rondte per week, dus 8 keer oor die seisoen.</li>' +
-    '<li><b>Jou maat verander elke week.</b> Oor weke 1 tot 7 speel jy presies een keer saam met elke ander vrou in die groep — sewe weke, sewe ander vroue.</li>' +
+    '<li><b>Jou maat verander elke week.</b> Oor weke 1 tot 7 speel jy presies een keer saam met elke ander ' + W + ' in die groep — sewe weke, sewe ander maats.</li>' +
     '<li><b>Week 8 is die finale.</b> Teen daardie tyd is elke moontlike paring al gespeel, so die spanne kom uit die ranglys: nommers 1 en 3 speel saam teen nommers 2 en 4, en nommers 5 en 7 speel saam teen nommers 6 en 8. Die dashboard stel dit self op sodra die tellings van weke 1–7 ingevul is.</li></ul>' +
     '<h3>Die tyd</h3>' +
-    '<p>Julle vier stem self saam oor wanneer julle daardie week speel — enigeen tik die datum en tyd op die dashboard in en druk <b>Bevestig</b>. Jy hoef dus nie elke week dieselfde dag beskikbaar te wees nie: jy pas padel by jou lewe aan, nie jou lewe by padel nie.</p>' +
+    '<p>Die weke is net Week 1 tot Week 8 — daar is geen vaste kalender nie. Julle vier stem self saam wanneer julle daardie week speel; enigeen tik die datum en tyd op die dashboard in en druk <b>Bevestig</b>. Jy hoef dus nie elke week dieselfde dag beskikbaar te wees nie.</p>' +
     '<h3>Die Americano-reëls</h3>' +
     '<ul><li>Jy speel in ’n paar, maar jou punte tel individueel.</li>' +
     '<li>Die wedstryd gaan tot ' + TARGET + ' punte.</li>' +
     '<li>Elke span dien vier keer, dan gaan die diens oor na die teenstanders.</li>' +
     '<li>Elke bal wat gewen word is een punt.</li>' +
-    '<li>Eindig die wedstryd 14–18, kry albei vroue in die eerste span 14 punte en albei in die tweede span 18. Saam altyd ' + TARGET + '.</li>' +
+    '<li>Eindig die wedstryd 14–18, kry albei in die eerste span 14 punte en albei in die tweede span 18. Saam altyd ' + TARGET + '.</li>' +
     '<li>Maks ' + TARGET + ' punte per week, ' + (TARGET*8) + ' oor die seisoen.</li></ul>' +
     '<p>Enigeen in die rondte kan die telling ná die tyd hier intik — tik een span se punte en die ander vul homself in. <b>Geen pryse</b> — die ranglys is net ’n lekker ekstra.</p>' +
-    '<h3>Wat dit kos</h3>' +
-    '<ul><li>' + money(S.regFee) + ' eenmalige registrasie, vooraf aan die organiseerder. Dit gaan in die baanfonds. Die bankbesonderhede staan op die <b>Kostes</b>-blad.</li>' +
-    '<li>By elke rondte sit die organiseerder ' + money(S.orgShare) + ' kontant uit die fonds by die baan in.</li>' +
-    '<li>Die ' + money(c.left) + ' wat oorbly deel die vier vroue op die baan — ' + money(c.perPlayer,dec) + ' elk, ter plaatse betaal.</li>' +
-    '<li>Altesaam ' + money(c.seasonPerPlayer,c.seasonPerPlayer%1!==0) + ' vir die hele program.</li>' +
-    '<li>Geen admin-, lidmaatskap- of geleentheidsfooi. Wat oorbly gaan na Seisoen 2 se baanfonds.</li></ul>' +
-    '<h3>As jy nie kan speel nie</h3>' +
-    '<p>Laat die organiseerder so gou moontlik weet — jou maat staan sonder ’n span as jy nie opdaag nie, so hoe vroeër hoe beter. Kanselleer jy op die nippertjie, bly jy verantwoordelik vir jou deel van daardie rondte se baanfooi, want die baan moet steeds betaal word.</p>' +
+    geld +
   '</div></div>';
 }
 /* ========== interaksie ========== */
@@ -593,7 +626,8 @@ app.addEventListener("click", function(e){
   var act=el.getAttribute("data-act");
   if(act==="tab"){ UI.tab=el.getAttribute("data-tab"); rememberUI(); render(); window.scrollTo(0,0); return; }
   if(act==="wk"){ UI.week=Math.max(0,Math.min(7,UI.week+ +el.getAttribute("data-d"))); rememberUI(); render(); return; }
-  if(act==="unlock"){ UI.tab="koste"; UI.codeErr=""; rememberUI(); render(); window.scrollTo(0,0);
+  if(act==="league"){ switchLeague(+el.getAttribute("data-i")); return; }
+  if(act==="unlock"){ UI.tab = league().costs ? "koste" : "stel"; UI.codeErr=""; rememberUI(); render(); window.scrollTo(0,0);
     var f=app.querySelector('input[name="code"]'); if(f) f.focus(); return; }
   if(act==="lockoff"){ UI.org=false; rememberUI(); render(); return; }
   if(act==="confirm"){
@@ -688,7 +722,7 @@ function screenLogin(){
   app.innerHTML =
     '<div class="gate"><div class="card gatecard">' +
       '<div class="gatemark">🎾</div>' +
-      '<h1>Vroue Padel Americano</h1>' +
+      '<h1>Padel Liga</h1>' +
       '<p class="small muted">Hierdie bladsy is vir die groep. Tik die groep se wagwoord in om voort te gaan.</p>' +
       '<form data-act="loginform">' +
         '<label class="fld">Wagwoord<input type="password" name="pw" autocomplete="current-password" required></label>' +
@@ -702,7 +736,7 @@ function screenLogin(){
 
 function screenLoading(msg){
   app.innerHTML = '<div class="gate"><div class="card gatecard">' +
-    '<div class="gatemark">🎾</div><h1>Vroue Padel Americano</h1>' +
+    '<div class="gatemark">🎾</div><h1>Padel Liga</h1>' +
     '<p class="small muted">'+esc(msg||"Laai…")+'</p></div></div>';
 }
 
@@ -713,7 +747,7 @@ function screenSetup(){
   }
   app.innerHTML =
     '<header class="top"><div class="wrap"><div class="topin">' +
-      '<div class="brand"><h1>Vroue Padel Americano</h1><span class="sub">Eerste opstelling</span></div>' +
+      '<div class="brand"><h1>Padel Liga</h1><span class="sub">'+esc(league().label)+' · eerste opstelling</span></div>' +
       '<div class="topact"><button class="btn ghost tiny" data-act="signout">Meld af</button></div>' +
     '</div></div></header>' +
     '<main><div class="wrap" style="max-width:760px">' +
@@ -726,6 +760,7 @@ function screenSetup(){
         '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">'+names+'</div>' +
       '</div>' +
 
+      (league().costs ?
       '<div class="card" style="padding:18px;margin-bottom:18px">' +
         '<div class="eyebrow" style="margin-bottom:10px">Bankbesonderhede vir registrasie</div>' +
         '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">' +
@@ -735,14 +770,18 @@ function screenSetup(){
           '<label class="fld">Rekeningnommer<input type="text" data-act="bank" data-f="acc" value="'+esc(S.bank.acc)+'" inputmode="numeric"></label>' +
         '</div>' +
       '</div>' +
-
       '<div class="card" style="padding:18px;margin-bottom:18px">' +
-        '<div class="eyebrow" style="margin-bottom:10px">Seisoen en koste</div>' +
+        '<div class="eyebrow" style="margin-bottom:10px">Koste</div>' +
         '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">' +
-          '<label class="fld">Week 1 begin (Maandag)<input type="date" data-act="setupstart" value="'+esc(S.startDate)+'"></label>' +
           '<label class="fld">Baanfooi per uur<input type="number" min="0" step="10" data-act="rate" value="'+S.courtRate+'"></label>' +
           '<label class="fld">Uit fonds per rondte<input type="number" min="0" step="10" data-act="share" value="'+S.orgShare+'"></label>' +
-          '<label class="fld">Registrasie per vrou<input type="number" min="0" step="10" data-act="reg" value="'+S.regFee+'"></label>' +
+          '<label class="fld">Registrasie per speler<input type="number" min="0" step="10" data-act="reg" value="'+S.regFee+'"></label>' +
+        '</div>' +
+      '</div>' : "") +
+
+      '<div class="card" style="padding:18px;margin-bottom:18px">' +
+        '<div class="eyebrow" style="margin-bottom:10px">Organiseerder</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">' +
           '<label class="fld">Organiseerder-kode<input type="text" data-act="setupcode" value="'+esc(S.code)+'" maxlength="24"></label>' +
         '</div>' +
       '</div>' +
@@ -762,6 +801,7 @@ function tabStel(){
       '<div class="eyebrow" style="margin-bottom:12px">Die agt spelers</div>' +
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">'+names+'</div>' +
     '</div>' +
+    (league().costs ?
     '<div class="card" style="padding:18px;margin-bottom:18px">' +
       '<div class="eyebrow" style="margin-bottom:12px">Bankbesonderhede</div>' +
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">' +
@@ -770,11 +810,10 @@ function tabStel(){
         '<label class="fld">Rekeningtipe<input type="text" data-act="bank" data-f="type" value="'+esc(S.bank.type)+'"></label>' +
         '<label class="fld">Rekeningnommer<input type="text" data-act="bank" data-f="acc" value="'+esc(S.bank.acc)+'" inputmode="numeric"></label>' +
       '</div>' +
-    '</div>' +
+    '</div>' : "") +
     '<div class="card" style="padding:18px">' +
       '<div class="eyebrow" style="margin-bottom:12px">Seisoen</div>' +
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">' +
-        '<label class="fld">Week 1 begin (Maandag)<input type="date" data-act="setupstart" value="'+esc(S.startDate)+'"></label>' +
         '<label class="fld">Organiseerder-kode<input type="text" data-act="setupcode" value="'+esc(S.code)+'" maxlength="24"></label>' +
       '</div>' +
       '<p class="small muted" style="margin-bottom:0">Die groep se wagwoord verander jy in die Firebase-konsole, nie hier nie.</p>' +
@@ -837,6 +876,40 @@ app.addEventListener("change", function(e){
   }
 });
 
+/* ========== intekening per liga ========== */
+function onSnap(snap){
+  if(!snap.exists()){
+    if(SCREEN!=="opstel"){ S=defaults(); SCREEN="opstel"; screenSetup(); }
+    return;
+  }
+  if(saving || saveTimer) return;                 /* ons eie skryf — moenie oortik nie */
+  var active=document.activeElement;
+  var typing = active && active!==document.body && app.contains(active) &&
+               /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName);
+  S = migrate(snap.data());
+  SCREEN="dashboard";
+  if(!typing) render();
+}
+function onSnapErr(){ screenLoading("Kon nie die data laai nie. Herlaai die bladsy."); }
+
+function subscribeLeague(){
+  if(unsub){ unsub(); unsub=null; }
+  if(DEMO || !FB || !db) return;
+  ref = FB.doc(db,"seasons",league().doc);
+  screenLoading("Haal " + league().label + " se seisoen…");
+  unsub = FB.onSnapshot(ref, onSnap, onSnapErr);
+}
+function switchLeague(i){
+  if(i===LG || !LEAGUES[i]) return;
+  if(saveTimer){ clearTimeout(saveTimer); doSave(); }   /* hangende verandering eers wegskryf */
+  LG=i;
+  try{ localStorage.setItem("pl-league", String(LG)); }catch(e){}
+  if(!league().costs && (UI.tab==="koste")) UI.tab="week";
+  UI.week=0; UI.player=0; UI.org=false; rememberUI();
+  S=defaults(); SCREEN="laai";
+  subscribeLeague();
+}
+
 /* ========== opstart ========== */
 function boot(){
   if(DEMO){ SCREEN="aanmeld"; screenLogin(); return; }
@@ -845,31 +918,15 @@ function boot(){
     screenLoading("Kon nie by Firebase uitkom nie. Kyk of jy aanlyn is en herlaai die bladsy.");
     throw new Error("cdn");
   }).then(function(){
-  auth=FB.getAuth(FB.initializeApp(firebaseConfig));
-  db=FB.getFirestore();
-  ref=FB.doc(db,"seasons",SEASON_ID);
-  FB.setPersistence(auth, FB.browserLocalPersistence).catch(function(){}).then(function(){
-    FB.onAuthStateChanged(auth, function(user){
-      if(unsub){ unsub(); unsub=null; }
-      if(!user){ SCREEN="aanmeld"; screenLogin(); return; }
-      screenLoading("Haal die seisoen…");
-      unsub = FB.onSnapshot(ref, function(snap){
-        if(!snap.exists()){
-          if(SCREEN!=="opstel"){ S=defaults(); SCREEN="opstel"; screenSetup(); }
-          return;
-        }
-        if(saving || saveTimer) return;                 /* ons eie skryf — moenie oortik nie */
-        var active=document.activeElement;
-        var typing = active && active!==document.body && app.contains(active) &&
-                     /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName);
-        S = migrate(snap.data());
-        SCREEN="dashboard";
-        if(!typing) render();
-      }, function(){
-        screenLoading("Kon nie die data laai nie. Herlaai die bladsy.");
+    auth=FB.getAuth(FB.initializeApp(firebaseConfig));
+    db=FB.getFirestore();
+    FB.setPersistence(auth, FB.browserLocalPersistence).catch(function(){}).then(function(){
+      FB.onAuthStateChanged(auth, function(user){
+        if(unsub){ unsub(); unsub=null; }
+        if(!user){ SCREEN="aanmeld"; screenLogin(); return; }
+        subscribeLeague();
       });
     });
-  });
   }).catch(function(){});
 }
 boot();

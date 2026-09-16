@@ -106,7 +106,7 @@ header.top{
   font-size:11px;text-transform:uppercase;letter-spacing:.14em;
   color:var(--ink-3);font-weight:700;white-space:nowrap;
 }
-.topact{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.topact{display:flex;align-items:center;gap:8px;flex:1 1 auto;flex-wrap:wrap;justify-content:flex-end;min-width:0}
 
 .savechip{
   font-size:12px;font-weight:700;padding:5px 10px;border-radius:999px;
@@ -356,3 +356,14 @@ textarea{
   background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:8px 10px;
   width:100%;resize:vertical;line-height:1.45;
 }
+
+/* ---------- ligakieser ---------- */
+.ligapick{display:inline-flex;gap:2px;padding:2px;border-radius:999px;
+  background:var(--surface-2);border:1px solid var(--line)}
+.ligapick .lg{
+  appearance:none;border:0;background:none;cursor:pointer;
+  font-family:Karla,sans-serif;font-size:12.5px;font-weight:700;color:var(--ink-3);
+  padding:5px 13px;border-radius:999px;white-space:nowrap;
+}
+.ligapick .lg:hover{color:var(--ink)}
+.ligapick .lg.on{background:var(--accent);color:var(--on-accent)}
