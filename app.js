@@ -95,6 +95,7 @@ function defaults(){
     bank:{holder:"", bank:"", type:"", acc:""},
     players:["Speler 1","Speler 2","Speler 3","Speler 4","Speler 5","Speler 6","Speler 7","Speler 8"],
     regPaid:[false,false,false,false,false,false,false,false],
+    subs:[],
     weeks:w
   };
 }
@@ -105,6 +106,10 @@ function migrate(s){
   if(!s.bank||typeof s.bank!=="object") s.bank=d.bank;
   if(!Array.isArray(s.players)||s.players.length!==8) s.players=d.players;
   if(!Array.isArray(s.regPaid)||s.regPaid.length!==8) s.regPaid=d.regPaid;
+  if(!Array.isArray(s.subs)) s.subs=[];
+  s.subs = s.subs.filter(function(x){
+    return x && typeof x==="object" && x.slot>=0 && x.slot<8 && x.from>=0 && x.from<8 && x.name;
+  }).sort(function(a,b){ return a.from-b.from; });
   if(!Array.isArray(s.weeks)||s.weeks.length!==8) s.weeks=d.weeks;
   for(var i=0;i<8;i++){
     var wq=s.weeks[i];
@@ -207,7 +212,7 @@ function costs(){
 function scores(v){ if(v===null||v===undefined) return null; return [v, TARGET-v]; }
 function tally(upto){
   var t=[],i;
-  for(i=0;i<8;i++) t.push({i:i,name:S.players[i],pts:0,weeks:0,won:0,drew:0});
+  for(i=0;i<8;i++) t.push({i:i,name:curName(i),pts:0,weeks:0,won:0,drew:0});
   for(var w=0;w<upto;w++){
     for(var g=0;g<2;g++){
       var mm=wk(w); if(!mm) continue;
@@ -249,6 +254,22 @@ function findMe(w,pi){
   return null;
 }
 function plural(n,one,many){ return n+" "+(n===1?one:many); }
+
+/* ===== Vervangings =====
+   S.subs = [{slot, from, name}] — 'from' is 'n week-indeks (0 = Week 1).
+   players[] bly die oorspronklike span; nameAt() gee wie daardie week
+   werklik gespeel het. */
+function nameAt(slot, w){
+  var n=S.players[slot], subs=S.subs||[], i;
+  for(i=0;i<subs.length;i++) if(subs[i].slot===slot && subs[i].from<=w) n=subs[i].name;
+  return n;
+}
+function curName(slot){ return nameAt(slot, 7); }
+function subsFor(slot){
+  var out=[], subs=S.subs||[], i;
+  for(i=0;i<subs.length;i++) if(subs[i].slot===slot) out.push(subs[i]);
+  return out;
+}
 /* ========== render ========== */
 var TABS_BASE=[["week","Hierdie week"],["skedule","Skedule"],["plan","My speelplan"],
           ["ranglys","Ranglys"],["koste","Kostes"],["hoe","Hoe dit werk"]];
@@ -309,7 +330,7 @@ function body(){
   }
   return "";
 }
-function pairName(pair){ return esc(S.players[pair[0]])+" + "+esc(S.players[pair[1]]); }
+function pairName(pair,w){ return esc(nameAt(pair[0],w))+" + "+esc(nameAt(pair[1],w)); }
 
 /* ---- Hierdie week ---- */
 function tabWeek(){
@@ -379,9 +400,9 @@ function rondteCard(w,g){
     if(!m) return "";
     var winner = sc && sc[side]>sc[1-side];
     return '<div class="trow'+(winner?" winrow":"")+'">' +
-      '<span class="tnames">'+pairName(m[side])+'</span>' +
+      '<span class="tnames">'+pairName(m[side],w)+'</span>' +
       '<input type="number" min="0" max="'+TARGET+'" inputmode="numeric" class="'+(winner?"win":"")+'" ' +
-        'aria-label="Punte vir '+pairName(m[side])+'" data-act="score" data-w="'+w+'" data-g="'+g+'" data-side="'+side+'" ' +
+        'aria-label="Punte vir '+pairName(m[side],w)+'" data-act="score" data-w="'+w+'" data-g="'+g+'" data-side="'+side+'" ' +
         'value="'+(sc?sc[side]:"")+'">' +
     '</div>';
   }
@@ -409,8 +430,8 @@ function tabSkedule(){
       var gr=S.weeks[w].groups[g], m=mmw?mmw[g]:null;
       rows += '<td>' + (m
         ? '<div class="mt">' +
-          '<div class="ta">'+pairName(m[0])+'</div>' +
-          '<div class="vs">teen '+pairName(m[1])+'</div></div>'
+          '<div class="ta">'+pairName(m[0],w)+'</div>' +
+          '<div class="vs">teen '+pairName(m[1],w)+'</div></div>'
         : '<div class="mt"><div class="ta muted">Finale</div><div class="vs">volgens die ranglys</div></div>') +
         '<div style="margin-top:7px">' + (gr.confirmed
           ? '<span class="pill ok"><span class="dot"></span>'+esc(slotLabel(gr))+'</span>'
@@ -428,7 +449,7 @@ function tabSkedule(){
 /* ---- My speelplan ---- */
 function tabPlan(){
   var pi=UI.player, opts="";
-  for(var i=0;i<8;i++) opts+='<option value="'+i+'"'+(i===pi?' selected':'')+'>'+esc(S.players[i])+'</option>';
+  for(var i=0;i<8;i++) opts+='<option value="'+i+'"'+(i===pi?' selected':'')+'>'+esc(curName(i))+'</option>';
   var st=stats()[pi];
   var cards="";
   for(var w=0;w<8;w++){
@@ -448,14 +469,16 @@ function tabPlan(){
                   : '<span class="pill neutral">Verloor</span>') : '';
     cards += '<section class="card sess">' +
       '<div class="sesshead"><div class="glabel"><span class="gbadge">'+(w+1)+'</span>' +
-        '<div><div class="eyebrow">Week '+(w+1)+' · rondte '+(f.g+1)+'</div></div></div>' +
+        '<div><div class="eyebrow">Week '+(w+1)+' · rondte '+(f.g+1)+'</div>' +
+        (nameAt(pi,w)!==curName(pi) ? '<div class="small muted">'+esc(nameAt(pi,w))+' het hierdie week gespeel</div>' : '') +
+        '</div></div>' +
         (gr.confirmed
           ? '<span class="pill ok"><span class="dot"></span>'+esc(slotLabel(gr))+'</span>'
           : '<span class="pill wait"><span class="dot"></span>'+(slotLabel(gr)?esc(slotLabel(gr)):'geen tyd')+'</span>') +
       '</div>' +
-      '<div class="planline"><span class="rn">MET</span><span class="tname">'+esc(S.players[f.mate])+'</span>' +
+      '<div class="planline"><span class="rn">MET</span><span class="tname">'+esc(nameAt(f.mate,w))+'</span>' +
         (w===FINALE&&!finaleFinal()?'<span class="pill wait" style="margin-left:auto">voorlopig</span>':'') + '</div>' +
-      '<div class="planline"><span class="rn">TEEN</span><span class="tname muted">'+esc(S.players[f.opp[0]])+' + '+esc(S.players[f.opp[1]])+'</span></div>' +
+      '<div class="planline"><span class="rn">TEEN</span><span class="tname muted">'+esc(nameAt(f.opp[0],w))+' + '+esc(nameAt(f.opp[1],w))+'</span></div>' +
       '<div class="totals"><span class="tot">Jou punte <b>'+(mine===null?"–":mine)+'</b></span>'+(res?'<span style="margin-left:auto">'+res+'</span>':'')+'</div>' +
     '</section>';
   }
@@ -483,7 +506,8 @@ function tabRanglys(){
     return '<div class="lbrow">' +
       '<div class="lbrank">'+(i+1)+'</div>' +
       '<div><div class="lbname">'+esc(p.name)+'</div>' +
-      '<div class="lbmeta">'+(p.weeks?plural(p.weeks,"week","weke")+' · '+p.won+' gewen'+(p.drew?' · '+p.drew+' gelykop':''):'nog nie gespeel nie')+'</div>' +
+      '<div class="lbmeta">'+(p.weeks?plural(p.weeks,"week","weke")+' · '+p.won+' gewen'+(p.drew?' · '+p.drew+' gelykop':''):'nog nie gespeel nie')+
+        (subsFor(p.i).length?' · neem oor van '+esc(S.players[p.i]):'')+'</div>' +
       '<div class="bar"><span style="width:'+Math.round(p.pts/max*100)+'%"></span></div></div>' +
       '<div class="lbpts">'+p.pts+'</div>' +
     '</div>';
@@ -537,7 +561,7 @@ function tabKoste(){
   var paidCount=0, rows="";
   for(var p=0;p<8;p++){
     if(S.regPaid[p]) paidCount++;
-    rows += '<tr><td><b>'+esc(S.players[p])+'</b></td>' +
+    rows += '<tr><td><b>'+esc(curName(p))+'</b></td>' +
       '<td class="c">' + (S.regPaid[p]
         ? '<span class="pill ok"><span class="dot"></span>Betaal</span>'
         : '<span class="pill wait"><span class="dot"></span>Uitstaande</span>') + '</td>' +
@@ -670,6 +694,8 @@ app.addEventListener("change", function(e){
   var act=el.getAttribute("data-act");
   if(act==="wksel"){ UI.week=+el.value; rememberUI(); render(); return; }
   if(act==="psel"){ UI.player=+el.value; rememberUI(); render(); return; }
+  if(act==="subslot"){ UI.newSub=UI.newSub||{slot:0,from:0,name:""}; UI.newSub.slot=+el.value; return; }
+  if(act==="subweek"){ UI.newSub=UI.newSub||{slot:0,from:0,name:""}; UI.newSub.from=+el.value; return; }
   if(act==="date"){ S.weeks[+el.getAttribute("data-w")].groups[+el.getAttribute("data-g")].date=el.value; render(); scheduleSave(); return; }
   if(act==="time"){ S.weeks[+el.getAttribute("data-w")].groups[+el.getAttribute("data-g")].time=el.value; render(); scheduleSave(); return; }
 });
@@ -794,13 +820,17 @@ function screenSetup(){
 function tabStel(){
   var names="";
   for(var i=0;i<8;i++){
-    names += '<label class="fld">Speler '+(i+1)+'<input type="text" data-act="setupname" data-p="'+i+'" value="'+esc(S.players[i])+'" maxlength="30"></label>';
+    var sl=subsFor(i);
+    names += '<label class="fld">Speler '+(i+1)+
+      '<input type="text" data-act="setupname" data-p="'+i+'" value="'+esc(S.players[i])+'" maxlength="30">' +
+      (sl.length?'<span class="hint">nou '+esc(curName(i))+'</span>':'') + '</label>';
   }
   return '<div class="sectionhead"><h2>Instellings</h2><span class="small muted">Veranderinge stoor outomaties</span></div>' +
     '<div class="card" style="padding:18px;margin-bottom:18px">' +
-      '<div class="eyebrow" style="margin-bottom:12px">Die agt spelers</div>' +
+      '<div class="eyebrow" style="margin-bottom:12px">Die oorspronklike agt</div>' +
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">'+names+'</div>' +
     '</div>' +
+    subsCard() +
     (league().costs ?
     '<div class="card" style="padding:18px;margin-bottom:18px">' +
       '<div class="eyebrow" style="margin-bottom:12px">Bankbesonderhede</div>' +
@@ -818,6 +848,35 @@ function tabStel(){
       '</div>' +
       '<p class="small muted" style="margin-bottom:0">Die groep se wagwoord verander jy in die Firebase-konsole, nie hier nie.</p>' +
     '</div>';
+}
+
+function subsCard(){
+  var subs=S.subs||[], rows="", i;
+  for(i=0;i<subs.length;i++){
+    var x=subs[i];
+    rows += '<div class="subrow">' +
+      '<div class="subtext"><b>'+esc(nameAt(x.slot, x.from-1))+'</b> &rarr; <b>'+esc(x.name)+'</b>' +
+      '<div class="small muted">Speler '+(x.slot+1)+' &middot; vanaf Week '+(x.from+1)+'</div></div>' +
+      '<button class="btn ghost tiny" data-act="subdel" data-i="'+i+'">Verwyder</button>' +
+    '</div>';
+  }
+  var ns = UI.newSub || (UI.newSub={slot:0, from:0, name:""});
+  var pOpts="", wOpts="";
+  for(i=0;i<8;i++) pOpts += '<option value="'+i+'"'+(ns.slot===i?' selected':'')+'>'+esc(curName(i))+'</option>';
+  for(i=0;i<8;i++) wOpts += '<option value="'+i+'"'+(ns.from===i?' selected':'')+'>Week '+(i+1)+'</option>';
+
+  return '<div class="card" style="padding:18px;margin-bottom:18px">' +
+    '<div class="eyebrow" style="margin-bottom:10px">Vervangings</div>' +
+    '<p class="small muted" style="margin:0 0 12px;max-width:60ch">Raak iemand beseer of val sy uit, tree ’n nuwe speler in haar plek. ' +
+      'Die weke voor die wissel wys steeds die oorspronklike naam; die nuwe speler neem die plek en die punte oor.</p>' +
+    (rows?'<div class="sublist">'+rows+'</div>':'<p class="small muted" style="margin:0 0 14px">Nog geen vervangings nie.</p>') +
+    '<div class="subadd">' +
+      '<label class="fld">Wie word vervang<select data-act="subslot">'+pOpts+'</select></label>' +
+      '<label class="fld">Vanaf<select data-act="subweek">'+wOpts+'</select></label>' +
+      '<label class="fld">Nuwe speler<input type="text" data-act="subname" value="'+esc(ns.name)+'" maxlength="30" placeholder="Naam Van"></label>' +
+      '<button class="btn" data-act="subadd"'+(ns.name.trim()?'':' disabled')+'>Voeg by</button>' +
+    '</div>' +
+  '</div>';
 }
 
 /* ========== ekstra hanteerders ========== */
@@ -844,6 +903,19 @@ app.addEventListener("click", function(e){
   var el=e.target.closest("[data-act]"); if(!el) return;
   var act=el.getAttribute("data-act");
   if(act==="signout"){ if(!DEMO && FB) FB.signOut(auth); return; }
+  if(act==="subadd"){
+    var ns=UI.newSub||{};
+    if(!ns.name || !ns.name.trim()) return;
+    S.subs = (S.subs||[]).concat([{slot:+ns.slot, from:+ns.from, name:ns.name.trim()}])
+            .sort(function(a,b){ return a.from-b.from; });
+    UI.newSub={slot:0, from:0, name:""};
+    render(); scheduleSave(); return;
+  }
+  if(act==="subdel"){
+    var ix=+el.getAttribute("data-i");
+    S.subs=(S.subs||[]).filter(function(_,k){ return k!==ix; });
+    render(); scheduleSave(); return;
+  }
   if(act==="createseason"){
     for(var i=0;i<8;i++) if(!String(S.players[i]).trim()) S.players[i]="Speler "+(i+1);
     doSave(); SCREEN="dashboard"; render(); return;
@@ -854,6 +926,11 @@ app.addEventListener("input", function(e){
   var el=e.target.closest("[data-act]"); if(!el) return;
   var act=el.getAttribute("data-act");
   if(act==="setupname"){ S.players[+el.getAttribute("data-p")]=el.value; if(SCREEN!=="opstel") scheduleSave(); return; }
+  if(act==="subname"){
+    UI.newSub=UI.newSub||{slot:0,from:0,name:""}; UI.newSub.name=el.value;
+    var btn=app.querySelector('[data-act="subadd"]'); if(btn) btn.disabled = !el.value.trim();
+    return;
+  }
   if(act==="bank"){ S.bank[el.getAttribute("data-f")]=el.value; if(SCREEN!=="opstel") scheduleSave(); return; }
   if(act==="setupcode"){ S.code=el.value; if(SCREEN!=="opstel") scheduleSave(); return; }
   if(act==="pastenames"){
